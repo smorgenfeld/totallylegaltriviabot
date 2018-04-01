@@ -5,6 +5,7 @@ import cv2
 import os
 import time
 import urllib.request
+from threading import Thread
 
 M1W = 1
 M2W = 1
@@ -39,47 +40,59 @@ def main(preprocess):
     # apply OCR to it
     coords = [[288, 804], [864, 988], [1048, 1173], [1223, 1363]]
     filenames = []
+    threads = []
+    out = []
     for i in range(4):
-        filenames.append(str(i)+"_test.png".format(os.getpid()))
-        cv2.imwrite(filenames[i], gray[coords[i][0]:coords[i][1], 52:1100])
+        threads.append(Thread(target = getImg, args = (coords[i][0], coords[i][1], filenames, i, gray, out)))
+        threads[i].start()
+    for i in range(4):
+        threads[i].join()
 
     # load the image as a PIL/Pillow image, apply OCR, and then delete
     # the temporary file
-    out = []
+
     for i in range(4):
-        out.append(pytesseract.image_to_string(PIL.Image.open(filenames[i])))
-        os.remove(filenames[i])
         print(out[i])
 
-    headers = {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'}
     weighted = [0, 0, 0]
     m3unweighted = [0,0,0]
     largest = 0
     largenum = 0
+    threads = []
     for i in range(3):
-        req = urllib.request.Request("https://google.com/search?q=" + (out[0] + "&as_epq=" + out[i+1]).replace(" ", "+").replace("\n", "+"), headers = headers)
-        page = str(urllib.request.urlopen(req).read())
-        start = page.find('\"resultStats')
-        end = page.find('results', start)
-        resultstr = page[start+20:end-1]
-        translation_table = dict.fromkeys(map(ord, ','), None)
-        resultstr = resultstr.translate(translation_table)
-        num = int(resultstr)
-        m3unweighted[i] = num
-        if(num > largenum):
-            largenum = num
-            largest = i + 1
+        threads.append(Thread(target = method3, args = (out, i, m3unweighted)))
+        threads[i].start()
+    for i in range(3):
+        threads[i].join()
+    largenum = max(m3unweighted)
+    largest = m3unweighted.index(largenum) + 1
 
-    for i in range(3):
-        weighted[i] = M3W * m3unweighted[i]/largenum
+    #for i in range(3):
+        #weighted[i] = M3W * m3unweighted[i]/largenum
     print("Method 3: " + str(largest))
-    print(weighted)
+    print(m3unweighted)
 
 
     print("Took " + str(time.time() - starttime) + " seconds to  run.");
     # show the output images
     cv2.imshow("Output", cv2.resize(gray, (200, 350), interpolation = cv2.INTER_CUBIC))
     cv2.waitKey(0)
+
+def getImg(y1, y2, filenames, i, gray, out):
+    filenames.append(str(i)+"_test.png".format(os.getpid()))
+    cv2.imwrite(filenames[i], gray[y1:y2, 52:1100])
+    out.append(pytesseract.image_to_string(PIL.Image.open(filenames[i])))
+    os.remove(filenames[i])
+
+def method3(out, i, m3unweighted):
+    headers = {'User-Agent':'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'}
+    req = urllib.request.Request("https://google.com/search?q=" + (out[0] + "&as_epq=" + out[i+1]).replace(" ", "+").replace("\n", "+"), headers = headers)
+    page = str(urllib.request.urlopen(req).read())
+    start = page.find('\"resultStats')
+    end = page.find('results', start)
+    resultstr = page[start+20:end-1]
+    translation_table = dict.fromkeys(map(ord, ','), None)
+    m3unweighted[i] = int(resultstr.translate(translation_table))
 
 main("thresh")
 
@@ -88,3 +101,4 @@ main("thresh")
 #864-988
 #1048-1173
 #1223-1363
+# potential dataset https://twitter.com/HQTriviaScribe
